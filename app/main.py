@@ -3,6 +3,7 @@ from app.models import AskRequest, AskResponse
 from app.database import create_engine_from_request, get_database_schema
 from app.llm import SQLGenerator
 from app.sql_utils import extract_sql, validate_sql, execute_query
+from app.schema_filter import filter_relevant_schema
 
 app = FastAPI(
     title="Dynamic Text-to-SQL API",
@@ -25,10 +26,12 @@ def ask_database(request: AskRequest):
         if not schema:
             raise HTTPException(status_code=400, detail="No tables found")
 
+        relevant_schema = filter_relevant_schema(schema, request.question)
+
         raw_output = llm.generate_sql(
             question=request.question,
             database_type=request.database_type,
-            schema=schema
+            schema=relevant_schema
         )
         print("RAW MODEL OUTPUT:\n", raw_output)
 
