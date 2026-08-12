@@ -23,6 +23,14 @@ def create_engine_from_request(request: AskRequest) -> Engine:
             "(provide in request or set corresponding DB_* env vars)"
         )
 
+    pw = conn["password"] or ""
+    masked_pw = (pw[:2] + "..." + pw[-2:] + f" (len={len(pw)})") if len(pw) > 4 else "***"
+    print(
+        f"DB CONNECT DEBUG: type={conn['database_type']} host={conn['host']} "
+        f"port={conn['port']} db={conn['database']} user={conn['username']} "
+        f"password={masked_pw}"
+    )
+
     if conn["database_type"] == "mysql":
         url = (
             f"mysql+pymysql://{conn['username']}:{conn['password']}"
