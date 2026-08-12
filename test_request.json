@@ -1,0 +1,10 @@
+{
+  "database_type": "mysql",
+  "host": "127.0.0.1",
+  "port": 3306,
+  "database": "company",
+  "username": "root",
+  "password": "root",
+  "question": "Get all employees",
+  "allow_limit": 1000
+}

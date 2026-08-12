@@ -1,0 +1,18 @@
+services:
+  text2sql-api:
+    build: .
+    container_name: text2sql-fastapi
+    ports:
+      - "8000:8000"
+    environment:
+      BASE_MODEL: Qwen/Qwen2.5-3B-Instruct
+      ADAPTER_PATH: /models/texttosql/results/checkpoint-3480
+    volumes:
+      - ./models:/models:ro
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
