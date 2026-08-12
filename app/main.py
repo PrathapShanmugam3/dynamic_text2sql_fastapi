@@ -1,3 +1,6 @@
+from dotenv import load_dotenv
+load_dotenv()
+
 from fastapi import FastAPI, HTTPException
 from app.models import AskRequest, AskResponse
 from app.database import create_engine_from_request, get_database_schema

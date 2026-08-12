@@ -1,17 +1,37 @@
+import os
 from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.engine import Engine
 from app.models import AskRequest
 
+def _resolve_connection(request: AskRequest) -> dict:
+    return {
+        "database_type": request.database_type or os.getenv("DB_TYPE"),
+        "host": request.host or os.getenv("DB_HOST"),
+        "port": request.port or int(os.getenv("DB_PORT", "0") or 0),
+        "database": request.database or os.getenv("DB_NAME"),
+        "username": request.username or os.getenv("DB_USER"),
+        "password": request.password or os.getenv("DB_PASSWORD"),
+    }
+
 def create_engine_from_request(request: AskRequest) -> Engine:
-    if request.database_type == "mysql":
-        url = (
-            f"mysql+pymysql://{request.username}:{request.password}"
-            f"@{request.host}:{request.port}/{request.database}"
+    conn = _resolve_connection(request)
+
+    missing = [key for key, value in conn.items() if not value]
+    if missing:
+        raise ValueError(
+            f"Missing database connection details: {', '.join(missing)} "
+            "(provide in request or set corresponding DB_* env vars)"
         )
-    elif request.database_type == "postgresql":
+
+    if conn["database_type"] == "mysql":
         url = (
-            f"postgresql+psycopg2://{request.username}:{request.password}"
-            f"@{request.host}:{request.port}/{request.database}"
+            f"mysql+pymysql://{conn['username']}:{conn['password']}"
+            f"@{conn['host']}:{conn['port']}/{conn['database']}"
+        )
+    elif conn["database_type"] == "postgresql":
+        url = (
+            f"postgresql+psycopg2://{conn['username']}:{conn['password']}"
+            f"@{conn['host']}:{conn['port']}/{conn['database']}"
         )
     else:
         raise ValueError("Unsupported database type")
