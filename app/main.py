@@ -25,13 +25,16 @@ def ask_database(request: AskRequest):
         if not schema:
             raise HTTPException(status_code=400, detail="No tables found")
 
-        sql = llm.generate_sql(
+        raw_output = llm.generate_sql(
             question=request.question,
             database_type=request.database_type,
             schema=schema
         )
+        print("RAW MODEL OUTPUT:\n", raw_output)
 
-        sql = extract_sql(sql)
+        sql = extract_sql(raw_output)
+        print("EXTRACTED SQL:\n", sql)
+
         validate_sql(sql, request.allow_limit)
 
         data = execute_query(engine, sql)
