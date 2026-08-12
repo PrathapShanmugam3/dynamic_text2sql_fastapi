@@ -23,6 +23,16 @@ def extract_sql(text_output: str) -> str:
     if match:
         text_output = text_output[match.start():]
 
+    text_output = text_output.strip().rstrip(";").strip()
+
+    # Truncate hallucinated trailing tokens after a valid LIMIT/OFFSET clause
+    # (e.g. "LIMIT 50 OFFSET 0 ROWS FETCH NEXT 49 AHEAD" -> "LIMIT 50 OFFSET 0").
+    match = re.search(
+        r"\bLIMIT\s+\d+(?:\s+OFFSET\s+\d+)?", text_output, re.I
+    )
+    if match:
+        text_output = text_output[:match.end()]
+
     return text_output.strip().rstrip(";") + ";"
 
 def validate_sql(sql: str, max_limit: int = 1000):
