@@ -35,6 +35,35 @@ def extract_sql(text_output: str) -> str:
 
     return text_output.strip().rstrip(";") + ";"
 
+FILTER_HINT_WORDS = [
+    "where", "with", "whose", "that has", "that have",
+    "greater", "less", "more than", "at least", "at most",
+    "before", "after", "between", "since", "until",
+    "equal", "not equal", "contains", "like",
+    "active", "inactive", "status", "type",
+]
+
+def strip_unrequested_where(sql: str, question: str) -> str:
+    """Drop a WHERE clause the model added when the question gave no filter criteria."""
+    question_lower = question.lower()
+    if any(hint in question_lower for hint in FILTER_HINT_WORDS):
+        return sql
+
+    match = re.search(r"\bWHERE\b", sql, re.I)
+    if not match:
+        return sql
+
+    tail_match = re.search(
+        r"\b(GROUP BY|ORDER BY|LIMIT|HAVING)\b", sql[match.end():], re.I
+    )
+    if tail_match:
+        tail_start = match.end() + tail_match.start()
+        return (sql[:match.start()] + sql[tail_start:]).strip()
+
+    end_match = re.search(r";\s*$", sql)
+    tail = sql[end_match.start():] if end_match else ""
+    return (sql[:match.start()].rstrip() + tail).strip()
+
 def validate_sql(sql: str, max_limit: int = 1000):
     cleaned = sql.strip().rstrip(";").strip()
     upper = cleaned.upper()
