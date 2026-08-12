@@ -91,7 +91,8 @@ SQL:
                 **inputs,
                 max_new_tokens=300,
                 do_sample=False,
-                temperature=0.1,
+                repetition_penalty=1.3,
+                no_repeat_ngram_size=4,
                 pad_token_id=self.tokenizer.eos_token_id
             )
 
