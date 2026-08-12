@@ -44,6 +44,38 @@ def validate_sql(sql: str, max_limit: int = 1000):
     if "--" in cleaned or "/*" in cleaned or "*/" in cleaned:
         raise ValueError("SQL comments are not allowed")
 
+    # Reject malformed pagination the model sometimes hallucinates
+    # (mixing LIMIT/OFFSET with FETCH ... ROWS ONLY is invalid in MySQL).
+    if "LIMIT" in upper and "FETCH" in upper and "ROWS ONLY" in upper:
+        raise ValueError("Malformed SQL: mixed LIMIT and FETCH FIRST clauses")
+
+    return True
+
+def validate_sql_against_schema(sql: str, schema: dict):
+    """Reject SQL that references tables/columns not present in the schema."""
+    cleaned = sql.strip().rstrip(";").strip()
+
+    known_tables = {name.lower() for name in schema}
+    known_columns = set()
+    for columns in schema.values():
+        for col in columns:
+            col_name = col["name"] if isinstance(col, dict) else col
+            known_columns.add(col_name.lower())
+
+    used_tables = {
+        m.lower() for m in re.findall(
+            r"\bFROM\s+`?(\w+)`?|\bJOIN\s+`?(\w+)`?", cleaned, re.I
+        ) for m in m if m
+    }
+    unknown_tables = used_tables - known_tables
+    if unknown_tables:
+        raise ValueError(f"Unknown table(s) referenced: {', '.join(sorted(unknown_tables))}")
+
+    used_columns = {c.lower() for c in re.findall(r"`(\w+)`", cleaned)} - used_tables
+    unknown_columns = used_columns - known_columns
+    if unknown_columns:
+        raise ValueError(f"Unknown column(s) referenced: {', '.join(sorted(unknown_columns))}")
+
     return True
 
 def execute_query(engine: Engine, sql: str):

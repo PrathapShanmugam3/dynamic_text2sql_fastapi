@@ -2,7 +2,7 @@ from fastapi import FastAPI, HTTPException
 from app.models import AskRequest, AskResponse
 from app.database import create_engine_from_request, get_database_schema
 from app.llm import SQLGenerator
-from app.sql_utils import extract_sql, validate_sql, execute_query
+from app.sql_utils import extract_sql, validate_sql, validate_sql_against_schema, execute_query
 from app.schema_filter import filter_relevant_schema
 
 app = FastAPI(
@@ -38,7 +38,11 @@ def ask_database(request: AskRequest):
         sql = extract_sql(raw_output)
         print("EXTRACTED SQL:\n", sql)
 
-        validate_sql(sql, request.allow_limit)
+        try:
+            validate_sql(sql, request.allow_limit)
+            validate_sql_against_schema(sql, schema)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
 
         data = execute_query(engine, sql)
 
