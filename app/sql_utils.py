@@ -36,11 +36,11 @@ def extract_sql(text_output: str) -> str:
     return text_output.strip().rstrip(";") + ";"
 
 FILTER_HINT_WORDS = [
-    "where", "with", "whose", "that has", "that have",
+    "where", "whose", "that has", "that have",
     "greater", "less", "more than", "at least", "at most",
     "before", "after", "between", "since", "until",
     "equal", "not equal", "contains", "like",
-    "active", "inactive", "status", "type",
+    "is active", "is inactive", "with status", "of type",
 ]
 
 def strip_unrequested_where(sql: str, question: str) -> str:

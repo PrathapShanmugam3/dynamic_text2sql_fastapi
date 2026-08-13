@@ -44,7 +44,7 @@ def ask_database(request: AskRequest):
 
         try:
             validate_sql(sql, request.allow_limit)
-            validate_sql_against_schema(sql, schema)
+            validate_sql_against_schema(sql, relevant_schema)
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc))
 
