@@ -36,7 +36,8 @@ class SQLGenerator:
         base = AutoModelForCausalLM.from_pretrained(
             BASE_MODEL,
             quantization_config=bnb_config,
-            device_map="auto"
+            device_map="auto",
+            low_cpu_mem_usage=True
         )
 
         self.model = PeftModel.from_pretrained(base, ADAPTER_PATH)
