@@ -35,6 +35,30 @@ def extract_sql(text_output: str) -> str:
 
     return text_output.strip().rstrip(";") + ";"
 
+FIELD_HINT_WORDS = [
+    "name", "email", "mobile", "phone", "id", "count", "total",
+    "sum", "average", "avg", "max", "min", "only", "column",
+]
+
+def expand_to_select_star(sql: str, question: str) -> str:
+    """The fine-tuned model tends to emit SELECT id ... for open-ended
+    'get all X' questions even when told to select all columns. Detect
+    that narrow case and widen it to SELECT * when the question names
+    no specific fields and the query has no WHERE/GROUP BY/aggregates."""
+    question_lower = question.lower()
+    if any(hint in question_lower for hint in FIELD_HINT_WORDS):
+        return sql
+
+    match = re.match(r"SELECT\s+`?id`?\s+FROM\s+(`?\w+`?)(.*)", sql, re.I | re.S)
+    if not match:
+        return sql
+
+    tail = match.group(2)
+    if re.search(r"\b(WHERE|GROUP BY|HAVING|JOIN)\b", tail, re.I):
+        return sql
+
+    return f"SELECT * FROM {match.group(1)}{tail}"
+
 FILTER_HINT_WORDS = [
     "where", "whose", "that has", "that have",
     "greater", "less", "more than", "at least", "at most",

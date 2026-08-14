@@ -5,7 +5,7 @@ from fastapi import FastAPI, HTTPException
 from app.models import AskRequest, AskResponse
 from app.database import create_engine_from_request, get_database_schema
 from app.llm import SQLGenerator
-from app.sql_utils import extract_sql, strip_unrequested_where, validate_sql, validate_sql_against_schema, execute_query
+from app.sql_utils import extract_sql, strip_unrequested_where, expand_to_select_star, validate_sql, validate_sql_against_schema, execute_query
 from app.schema_filter import filter_relevant_schema
 
 app = FastAPI(
@@ -40,6 +40,7 @@ def ask_database(request: AskRequest):
 
         sql = extract_sql(raw_output)
         sql = strip_unrequested_where(sql, request.question)
+        sql = expand_to_select_star(sql, request.question)
         print("EXTRACTED SQL:\n", sql)
 
         try:
