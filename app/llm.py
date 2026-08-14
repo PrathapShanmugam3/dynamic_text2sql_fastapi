@@ -73,6 +73,7 @@ Rules:
 6. Generate SELECT queries only.
 7. Do not generate INSERT, UPDATE, DELETE, DROP, ALTER, TRUNCATE, CREATE.
 8. Return SQL only. No explanation.
+9. If the question asks for "all" records without naming specific fields, select all columns using SELECT *.
 
 User question:
 {question}
@@ -90,7 +91,7 @@ SQL:
         with torch.no_grad():
             output = self.model.generate(
                 **inputs,
-                max_new_tokens=300,
+                max_new_tokens=100,
                 do_sample=False,
                 repetition_penalty=1.3,
                 no_repeat_ngram_size=4,
