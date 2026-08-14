@@ -67,10 +67,18 @@ FILTER_HINT_WORDS = [
     "is active", "is inactive", "with status", "of type",
 ]
 
+VALUE_PATTERN = re.compile(
+    r"""['"][^'"]+['"]"""          # quoted string, e.g. 'pynixindia@gmail.com'
+    r"""|\b[\w.+-]+@[\w-]+\.[\w.-]+\b"""  # bare email address
+    r"""|\b\d+\b"""                # standalone number/id
+)
+
 def strip_unrequested_where(sql: str, question: str) -> str:
     """Drop a WHERE clause the model added when the question gave no filter criteria."""
     question_lower = question.lower()
     if any(hint in question_lower for hint in FILTER_HINT_WORDS):
+        return sql
+    if VALUE_PATTERN.search(question):
         return sql
 
     match = re.search(r"\bWHERE\b", sql, re.I)
