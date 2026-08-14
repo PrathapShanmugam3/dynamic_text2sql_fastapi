@@ -25,6 +25,13 @@ def extract_sql(text_output: str) -> str:
 
     text_output = text_output.strip().rstrip(";").strip()
 
+    # Cut at the first statement terminator or paragraph break -- the model
+    # sometimes rambles into unrelated prose (or fake "REFUSED:"/GRANT text)
+    # after a complete statement, with no LIMIT clause to anchor on.
+    match = re.search(r";|\n\s*\n", text_output)
+    if match:
+        text_output = text_output[:match.start()]
+
     # Truncate hallucinated trailing tokens after a valid LIMIT/OFFSET clause
     # (e.g. "LIMIT 50 OFFSET 0 ROWS FETCH NEXT 49 AHEAD" -> "LIMIT 50 OFFSET 0").
     match = re.search(
