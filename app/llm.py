@@ -10,6 +10,41 @@ BASE_MODEL = config.BASE_MODEL
 ADAPTER_PATH = config.ADAPTER_PATH
 
 
+def _patch_bnb_frozenset_bug():
+    """transformers==4.46.3's bnb integration code calls .discard() on the set
+    of bitsandbytes-supported devices, but some bitsandbytes builds return
+    that as a frozenset (immutable, no .discard()), crashing
+    from_pretrained(..., quantization_config=...) with AttributeError:
+    'frozenset' object has no attribute 'discard'. We're loading a single,
+    valid BitsAndBytesConfig on one CUDA GPU, so this multi-backend
+    availability check has nothing meaningful to reject here -- skip it if it
+    hits the known frozenset bug. Idempotent: safe to call more than once
+    (e.g. if SQLGenerator is constructed twice in the same process) since a
+    second call is a no-op once the marker attribute is set."""
+    import transformers.integrations.bitsandbytes as bnb_integration
+
+    if getattr(
+        bnb_integration._validate_bnb_multi_backend_availability,
+        "_is_frozenset_shim",
+        False,
+    ):
+        return
+
+    original_validate = bnb_integration._validate_bnb_multi_backend_availability
+
+    def patched_validate(raise_exception=True, *args, **kwargs):
+        try:
+            return original_validate(raise_exception, *args, **kwargs)
+        except AttributeError as exc:
+            if "discard" not in str(exc):
+                raise
+            print(f"Skipping bnb multi-backend availability check (known bug: {exc})")
+            return True
+
+    patched_validate._is_frozenset_shim = True
+    bnb_integration._validate_bnb_multi_backend_availability = patched_validate
+
+
 class SQLGenerator:
     def __init__(self):
         use_gpu = torch.cuda.is_available() and not config.FORCE_CPU
@@ -24,6 +59,8 @@ class SQLGenerator:
     def _load_gpu_quantized(self):
         """GPU path: 4-bit NF4 base model + PEFT LoRA adapter on top, matching
         the training-time quantization config exactly."""
+        _patch_bnb_frozenset_bug()
+
         print(f"[GPU] Loading base model: {BASE_MODEL}")
         print(f"[GPU] Loading LoRA adapter: {ADAPTER_PATH}")
 
