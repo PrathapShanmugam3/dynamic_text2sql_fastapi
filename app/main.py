@@ -23,7 +23,7 @@ from app.sql_utils import (
     enforce_row_limit,
     execute_query,
 )
-from app.rag import filter_relevant_schema_rag
+from app.rag import filter_relevant_schema_rag, _get_embedder
 from app.sql_repair import attempt_repair
 from app.result_formatter import normalize_result
 
@@ -38,6 +38,13 @@ app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 llm = SQLGenerator()
+
+# Warm up the RAG embedder at startup instead of lazily on the first request --
+# SentenceTransformer(...) downloads/loads its weights on first use (~110s
+# observed on CPU), which was previously stacking on top of the LLM's own
+# slow CPU generation time inside the same request and blowing past client/
+# ngrok timeouts. Loading it here means only server startup pays that cost.
+_get_embedder()
 
 
 @app.get("/health")
