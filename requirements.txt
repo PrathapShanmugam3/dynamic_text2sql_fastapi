@@ -11,3 +11,6 @@ accelerate==1.0.1
 bitsandbytes==0.46.1
 torch
 sentencepiece
+faiss-cpu==1.9.0
+sentence-transformers==3.3.1
+slowapi==0.1.9

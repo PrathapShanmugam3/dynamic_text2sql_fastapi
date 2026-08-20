@@ -1,28 +1,39 @@
 import os
-import re
 import torch
 from transformers import AutoTokenizer, AutoModelForCausalLM, BitsAndBytesConfig
 from peft import PeftModel
 
-BASE_MODEL = os.getenv("BASE_MODEL", "Qwen/Qwen2.5-3B-Instruct")
-ADAPTER_PATH = os.getenv(
-    "ADAPTER_PATH",
-    "/models/texttosql/results/checkpoint-3480"
-)
+from app import config
+from app import prompt as prompt_builder
+
+BASE_MODEL = config.BASE_MODEL
+ADAPTER_PATH = config.ADAPTER_PATH
+
 
 class SQLGenerator:
     def __init__(self):
-        print(f"Loading base model: {BASE_MODEL}")
-        print(f"Loading LoRA adapter: {ADAPTER_PATH}")
+        use_gpu = torch.cuda.is_available() and not config.FORCE_CPU
+
+        if use_gpu:
+            self._load_gpu_quantized()
+        else:
+            self._load_cpu()
+
+        self.model.eval()
+
+    def _load_gpu_quantized(self):
+        """GPU path: 4-bit NF4 base model + PEFT LoRA adapter on top, matching
+        the training-time quantization config exactly."""
+        print(f"[GPU] Loading base model: {BASE_MODEL}")
+        print(f"[GPU] Loading LoRA adapter: {ADAPTER_PATH}")
 
         if not os.path.exists(ADAPTER_PATH):
             raise FileNotFoundError(
                 f"LoRA adapter not found: {ADAPTER_PATH}. "
-                "Set ADAPTER_PATH to your checkpoint-3480 directory."
+                "Set ADAPTER_PATH to your checkpoint directory."
             )
 
         self.tokenizer = AutoTokenizer.from_pretrained(ADAPTER_PATH)
-
         if self.tokenizer.pad_token is None:
             self.tokenizer.pad_token = self.tokenizer.eos_token
 
@@ -41,46 +52,36 @@ class SQLGenerator:
         )
 
         self.model = PeftModel.from_pretrained(base, ADAPTER_PATH)
-        self.model.eval()
 
-    @staticmethod
-    def schema_to_text(schema: dict) -> str:
-        parts = []
-        for table, columns in schema.items():
-            parts.append(f"TABLE {table}")
-            for col in columns:
-                parts.append(f"  - {col['name']} {col['type']}")
-            parts.append("")
-        return "\n".join(parts)
+    def _load_cpu(self):
+        """CPU path: bitsandbytes 4-bit quantization requires CUDA, so this
+        loads the already-merged full-precision model instead of base+adapter.
+        Set MERGED_MODEL_PATH (or MODEL_PATH) to a `save_pretrained` merged
+        model directory. Expect generation to be far slower than on GPU."""
+        model_path = config.MERGED_MODEL_PATH
+        if not model_path:
+            raise FileNotFoundError(
+                "CPU inference requires a merged model. Set MERGED_MODEL_PATH "
+                "(or MODEL_PATH) to a directory produced by merging the LoRA "
+                "adapter into the base model and calling save_pretrained()."
+            )
+        if not os.path.exists(model_path):
+            raise FileNotFoundError(f"Merged model not found: {model_path}")
 
-    def generate_sql(self, question: str, database_type: str, schema: dict) -> str:
-        schema_text = self.schema_to_text(schema)
+        print(f"[CPU] Loading merged model: {model_path}")
 
-        prompt = f"""You are a professional Text-to-SQL system.
+        self.tokenizer = AutoTokenizer.from_pretrained(model_path)
+        if self.tokenizer.pad_token is None:
+            self.tokenizer.pad_token = self.tokenizer.eos_token
 
-Database type:
-{database_type}
+        self.model = AutoModelForCausalLM.from_pretrained(
+            model_path,
+            torch_dtype=torch.bfloat16,
+            device_map="cpu",
+            low_cpu_mem_usage=True,
+        )
 
-Database schema:
-{schema_text}
-
-Rules:
-1. Generate only valid {database_type} SQL.
-2. Use only tables from the provided schema.
-3. Use only columns from the provided schema.
-4. Never invent table names.
-5. Never invent column names.
-6. Generate SELECT queries only.
-7. Do not generate INSERT, UPDATE, DELETE, DROP, ALTER, TRUNCATE, CREATE.
-8. Return SQL only. No explanation.
-9. If the question asks for "all" records without naming specific fields, select all columns using SELECT *.
-
-User question:
-{question}
-
-SQL:
-"""
-
+    def generate_from_prompt(self, prompt: str) -> str:
         inputs = self.tokenizer(
             prompt,
             return_tensors="pt",
@@ -91,16 +92,15 @@ SQL:
         with torch.no_grad():
             output = self.model.generate(
                 **inputs,
-                max_new_tokens=100,
+                max_new_tokens=config.MAX_NEW_TOKENS,
                 do_sample=False,
                 repetition_penalty=1.3,
                 no_repeat_ngram_size=4,
                 pad_token_id=self.tokenizer.eos_token_id
             )
 
-        generated = self.tokenizer.decode(
-            output[0],
-            skip_special_tokens=True
-        )
+        return self.tokenizer.decode(output[0], skip_special_tokens=True)
 
-        return generated
+    def generate_sql(self, question: str, database_type: str, schema: dict) -> str:
+        prompt = prompt_builder.build_prompt(question, database_type, schema)
+        return self.generate_from_prompt(prompt)

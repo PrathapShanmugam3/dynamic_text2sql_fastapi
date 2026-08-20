@@ -156,6 +156,22 @@ def validate_sql_against_schema(sql: str, schema: dict):
 
     return True
 
+def enforce_row_limit(sql: str, max_limit: int) -> str:
+    """Ensure the query has a server-side LIMIT no greater than max_limit
+    (SRS FR-011 / Section 14: prefer server-side LIMIT enforcement)."""
+    cleaned = sql.strip().rstrip(";").strip()
+    match = re.search(r"\bLIMIT\s+(\d+)", cleaned, re.I)
+
+    if match:
+        existing = int(match.group(1))
+        if existing > max_limit:
+            cleaned = cleaned[:match.start(1)] + str(max_limit) + cleaned[match.end(1):]
+    else:
+        cleaned = f"{cleaned} LIMIT {max_limit}"
+
+    return cleaned + ";"
+
+
 def execute_query(engine: Engine, sql: str):
     with engine.connect() as connection:
         result = connection.execute(text(sql))

@@ -1,17 +1,20 @@
-import os
-from sqlalchemy import create_engine, inspect, text
+from sqlalchemy import create_engine, inspect
 from sqlalchemy.engine import Engine
+
+from app import config
 from app.models import AskRequest
+
 
 def _resolve_connection(request: AskRequest) -> dict:
     return {
-        "database_type": request.database_type or os.getenv("DB_TYPE"),
-        "host": request.host or os.getenv("DB_HOST"),
-        "port": request.port or int(os.getenv("DB_PORT", "0") or 0),
-        "database": request.database or os.getenv("DB_NAME"),
-        "username": request.username or os.getenv("DB_USER"),
-        "password": request.password or os.getenv("DB_PASSWORD"),
+        "database_type": request.database_type or config.DB_TYPE,
+        "host": request.host or config.DB_HOST,
+        "port": request.port or config.DB_PORT,
+        "database": request.database or config.DB_NAME,
+        "username": request.username or config.DB_USER,
+        "password": request.password or config.DB_PASSWORD,
     }
+
 
 def create_engine_from_request(request: AskRequest) -> Engine:
     conn = _resolve_connection(request)
@@ -22,14 +25,6 @@ def create_engine_from_request(request: AskRequest) -> Engine:
             f"Missing database connection details: {', '.join(missing)} "
             "(provide in request or set corresponding DB_* env vars)"
         )
-
-    pw = conn["password"] or ""
-    masked_pw = (pw[:2] + "..." + pw[-2:] + f" (len={len(pw)})") if len(pw) > 4 else "***"
-    print(
-        f"DB CONNECT DEBUG: type={conn['database_type']} host={conn['host']} "
-        f"port={conn['port']} db={conn['database']} user={conn['username']} "
-        f"password={masked_pw}"
-    )
 
     if conn["database_type"] == "mysql":
         url = (
@@ -44,7 +39,13 @@ def create_engine_from_request(request: AskRequest) -> Engine:
     else:
         raise ValueError("Unsupported database type")
 
-    return create_engine(url, pool_pre_ping=True, pool_recycle=1800)
+    return create_engine(
+        url,
+        pool_pre_ping=True,
+        pool_recycle=1800,
+        connect_args={"connect_timeout": config.QUERY_TIMEOUT_SECONDS},
+    )
+
 
 def get_database_schema(engine: Engine) -> dict:
     inspector = inspect(engine)
@@ -61,3 +62,23 @@ def get_database_schema(engine: Engine) -> dict:
         schema[table_name] = columns
 
     return schema
+
+
+def get_table_relationships(engine: Engine) -> dict:
+    """Foreign-key relationships per table, for the RAG knowledge unit
+    (SRS Section 12.1)."""
+    inspector = inspect(engine)
+    relationships = {}
+
+    for table_name in inspector.get_table_names():
+        rels = []
+        for fk in inspector.get_foreign_keys(table_name):
+            referred_table = fk.get("referred_table")
+            constrained = fk.get("constrained_columns") or []
+            referred = fk.get("referred_columns") or []
+            for local_col, remote_col in zip(constrained, referred):
+                rels.append(f"{table_name}.{local_col} -> {referred_table}.{remote_col}")
+        if rels:
+            relationships[table_name] = rels
+
+    return relationships
