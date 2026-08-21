@@ -36,3 +36,9 @@ QUERY_TIMEOUT_SECONDS = _int("QUERY_TIMEOUT_SECONDS", 10)
 
 API_KEYS = {key.strip() for key in os.getenv("API_KEYS", "").split(",") if key.strip()}
 RATE_LIMIT = os.getenv("RATE_LIMIT", "30/minute")
+
+CORS_ORIGINS = [
+    origin.strip()
+    for origin in os.getenv("CORS_ORIGINS", "http://localhost:3000").split(",")
+    if origin.strip()
+]
