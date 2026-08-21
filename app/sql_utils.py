@@ -42,29 +42,56 @@ def extract_sql(text_output: str) -> str:
 
     return text_output.strip().rstrip(";") + ";"
 
-FIELD_HINT_WORDS = [
-    "name", "email", "mobile", "phone", "id", "count", "total",
-    "sum", "average", "avg", "max", "min", "only", "column",
-]
+AGGREGATE_FUNCS = re.compile(r"\b(COUNT|SUM|AVG|MIN|MAX)\s*\(", re.I)
 
-def expand_to_select_star(sql: str, question: str) -> str:
-    """The fine-tuned model tends to emit SELECT id ... for open-ended
-    'get all X' questions even when told to select all columns. Detect
-    that narrow case and widen it to SELECT * when the question names
-    no specific fields and the query has no WHERE/GROUP BY/aggregates."""
-    question_lower = question.lower()
-    if any(hint in question_lower for hint in FIELD_HINT_WORDS):
-        return sql
-
-    match = re.match(r"SELECT\s+`?id`?\s+FROM\s+(`?\w+`?)(.*)", sql, re.I | re.S)
+def expand_to_select_star(sql: str, question: str, schema: dict = None) -> str:
+    """The fine-tuned model tends to emit a narrow column list (e.g. SELECT id
+    or SELECT id, name) for open-ended 'get all X' questions even when told to
+    select all columns. Detect that narrow case against the *actual* schema
+    (table/column names are dynamic per-connection, so this must not hardcode
+    any table/column names) and widen to SELECT * when the question doesn't
+    name any of that table's real columns and the query has no
+    WHERE/GROUP BY/HAVING/JOIN/aggregate."""
+    match = re.match(
+        r"SELECT\s+(?P<cols>.+?)\s+FROM\s+`?(?P<table>\w+)`?(?P<tail>.*)",
+        sql, re.I | re.S,
+    )
     if not match:
         return sql
 
-    tail = match.group(2)
+    cols_text = match.group("cols").strip()
+    if cols_text == "*":
+        return sql
+    if AGGREGATE_FUNCS.search(cols_text):
+        return sql
+
+    table = match.group("table")
+    tail = match.group("tail")
     if re.search(r"\b(WHERE|GROUP BY|HAVING|JOIN)\b", tail, re.I):
         return sql
 
-    return f"SELECT * FROM {match.group(1)}{tail}"
+    selected_cols = [c.strip().strip("`").split(".")[-1] for c in cols_text.split(",")]
+
+    schema_cols = None
+    if schema is not None:
+        table_schema = schema.get(table) or next(
+            (cols for name, cols in schema.items() if name.lower() == table.lower()),
+            None,
+        )
+        if table_schema is not None:
+            schema_cols = {
+                (c["name"] if isinstance(c, dict) else c) for c in table_schema
+            }
+
+    if schema_cols is not None:
+        if len(selected_cols) >= len(schema_cols):
+            return sql
+
+    question_lower = question.lower()
+    if any(col.lower() in question_lower for col in selected_cols):
+        return sql
+
+    return f"SELECT * FROM `{table}`{tail}"
 
 FILTER_HINT_WORDS = [
     "where", "whose", "that has", "that have",

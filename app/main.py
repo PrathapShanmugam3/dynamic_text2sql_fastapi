@@ -91,7 +91,7 @@ def ask_database(request: Request, body: AskRequest):
 
         sql = extract_sql(raw_output)
         sql = strip_unrequested_where(sql, body.question)
-        sql = expand_to_select_star(sql, body.question)
+        sql = expand_to_select_star(sql, body.question, relevant_schema)
 
         try:
             validate_sql(sql, body.allow_limit)
